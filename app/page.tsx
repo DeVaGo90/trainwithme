@@ -249,17 +249,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    void loadSessions();
-    void loadParticipants();
+    void refreshAllData();
   }, []);
 
   useEffect(() => {
     if (!user) return;
-    void ensureProfile();
-    void loadProfile();
-    void loadAllProfiles();
-    void loadFriendships();
-    void loadParticipants();
+    void initializeUserData();
   }, [user]);
 
   useEffect(() => {
@@ -335,9 +330,9 @@ export default function Home() {
 
   const stats = useMemo(
     () => ({
-      sessionCount: sessions.length,
-      friendCount: friendships.filter((f) => f.status === "accepted").length,
-      requestCount: nearbySessions.length,
+      sessionCount: sessions?.length || 0,
+      friendCount: friendships?.filter((f) => f.status === "accepted")?.length || 0,
+      requestCount: nearbySessions?.length || 0,
     }),
     [sessions, friendships, nearbySessions]
   );
@@ -408,12 +403,28 @@ export default function Home() {
     return locationNames[rawLocation] || rawLocation;
   }
 
+  async function refreshAllData() {
+    await Promise.all([loadSessions(), loadParticipants()]);
+  }
+
+  async function initializeUserData() {
+    await ensureProfile();
+    await Promise.all([
+      loadProfile(),
+      loadAllProfiles(),
+      loadFriendships(),
+      loadSessions(),
+      loadParticipants(),
+    ]);
+  }
+
   async function loadSessions() {
     const { data } = await supabase
       .from("sessions")
       .select("id, user_id, user_name, sport, location, visibility, joined_count, created_at")
       .order("created_at", { ascending: false });
     setSessions(data || []);
+    return data || [];
   }
 
   async function loadParticipants() {
@@ -421,6 +432,7 @@ export default function Home() {
       .from("session_participants")
       .select("id, session_id, user_id, participant_name, participant_email");
     setParticipants(data || []);
+    return data || [];
   }
 
   async function loadMessages(sessionId: string) {
@@ -454,6 +466,7 @@ export default function Home() {
     if (data) {
       setProfile(data);
       setDisplayName(data.display_name || "");
+      return data;
     }
   }
 
@@ -463,6 +476,7 @@ export default function Home() {
       .select("user_id, email, display_name")
       .order("display_name", { ascending: true });
     setAllProfiles(data || []);
+    return data || [];
   }
 
   async function loadFriendships() {
@@ -472,6 +486,7 @@ export default function Home() {
       .select("id, requester_id, addressee_id, status")
       .or(`requester_id.eq.${user.id},addressee_id.eq.${user.id}`);
     setFriendships((data || []) as Friendship[]);
+    return (data || []) as Friendship[];
   }
 
   async function signUp() {
@@ -501,8 +516,7 @@ export default function Home() {
       .eq("user_id", user.id);
     if (error) return setMessage("Profil konnte nicht gespeichert werden: " + error.message);
     setMessage("Profil gespeichert.");
-    await loadProfile();
-    await loadAllProfiles();
+    await Promise.all([loadProfile(), loadAllProfiles()]);
   }
 
   function useCurrentLocation() {
@@ -564,8 +578,7 @@ export default function Home() {
       .eq("addressee_id", user.id);
     if (error) return setMessage("Anfrage konnte nicht angenommen werden: " + error.message);
     setMessage("Freund hinzugefügt.");
-    await loadFriendships();
-    await loadAllProfiles();
+    await Promise.all([loadFriendships(), loadAllProfiles()]);
   }
 
   async function rejectFriend(id: string) {
@@ -611,8 +624,7 @@ export default function Home() {
       setMessage("Session erstellt.");
     }
     setLocation("");
-    await loadSessions();
-    await loadParticipants();
+    await refreshAllData();
   }
 
   async function joinSession(session: SessionItem) {
@@ -629,8 +641,7 @@ export default function Home() {
     const nextCount = (session.joined_count || 0) + 1;
     await supabase.from("sessions").update({ joined_count: nextCount }).eq("id", session.id);
     setMessage("Du bist der Session beigetreten.");
-    await loadSessions();
-    await loadParticipants();
+    await refreshAllData();
   }
 
   async function deleteSession(id: string, ownerId: string | null) {
@@ -644,8 +655,7 @@ export default function Home() {
       setMessages([]);
     }
     setMessage("Session gelöscht.");
-    await loadSessions();
-    await loadParticipants();
+    await refreshAllData();
   }
 
   async function sendChatMessage() {
@@ -769,7 +779,7 @@ export default function Home() {
               ) : (
                 friendProfiles.map((friend) => (
                   <div key={friend.user_id} className="rounded-2xl border border-slate-200 p-4">
-                    <div className="font-semibold">{friend.displayName || friend.display_name || friend.email}</div>
+                    <div className="font-semibold">{friend.display_name || friend.email}</div>
                     <div className="mt-1 text-sm text-slate-500">{friend.email}</div>
                   </div>
                 ))
