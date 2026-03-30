@@ -709,11 +709,7 @@ export default function Home() {
           </button>
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
-	<StatPill icon={<MessageCircle size={14} />} label="Sessions" value={stats.sessions} />
-	<StatPill icon={<HeartHandshake size={14} />} label="Freunde" value={stats.friends} />
-	<StatPill icon={<MapIcon size={14} />} label="Nearby" value={stats.nearby} />
-        </div>
+
       </AppCard>
 
       {message && <AppCard className="mb-4 bg-indigo-50 text-sm text-slate-700">{message}</AppCard>}
