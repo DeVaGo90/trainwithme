@@ -335,11 +335,11 @@ export default function Home() {
 
   const stats = useMemo(
     () => ({
-      sessionCount: visibleSessions.length,
-      friendCount: friendProfiles.length,
-      requestCount: incomingRequests.length,
+      sessionCount: sessions.length,
+      friendCount: friendships.filter((f) => f.status === "accepted").length,
+      requestCount: nearbySessions.length,
     }),
-    [visibleSessions.length, friendProfiles.length, incomingRequests.length]
+    [sessions, friendships, nearbySessions]
   );
 
   useEffect(() => {
@@ -691,7 +691,7 @@ export default function Home() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-white/70">TrainWithMe</div>
-            <h1 className="text-2xl font-bold tracking-tight">Find your crew. Start your session</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Nearby Sessions</h1>
             <p className="mt-2 text-sm text-white/80">Eingeloggt als {user.email}</p>
           </div>
           <button onClick={signOut} className="rounded-2xl bg-white/15 px-3 py-2 text-sm font-semibold text-white backdrop-blur">
@@ -769,7 +769,7 @@ export default function Home() {
               ) : (
                 friendProfiles.map((friend) => (
                   <div key={friend.user_id} className="rounded-2xl border border-slate-200 p-4">
-                   <div className="font-semibold">{friend.display_name || friend.email}</div>
+                    <div className="font-semibold">{friend.displayName || friend.display_name || friend.email}</div>
                     <div className="mt-1 text-sm text-slate-500">{friend.email}</div>
                   </div>
                 ))
