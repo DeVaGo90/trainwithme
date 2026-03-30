@@ -769,7 +769,7 @@ export default function Home() {
               ) : (
                 friendProfiles.map((friend) => (
                   <div key={friend.user_id} className="rounded-2xl border border-slate-200 p-4">
-                    <div className="font-semibold">{friend.displayName || friend.display_name || friend.email}</div>
+                   <div className="font-semibold">{friend.display_name || friend.email}</div>
                     <div className="mt-1 text-sm text-slate-500">{friend.email}</div>
                   </div>
                 ))
