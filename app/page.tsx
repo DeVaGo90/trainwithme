@@ -709,7 +709,9 @@ export default function Home() {
           </button>
         </div>
 
-
+<p className="mt-4 text-sm text-white/70">
+  Find your crew. Start your session.
+</p>
       </AppCard>
 
       {message && <AppCard className="mb-4 bg-indigo-50 text-sm text-slate-700">{message}</AppCard>}
