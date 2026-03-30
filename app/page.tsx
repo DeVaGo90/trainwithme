@@ -329,13 +329,13 @@ export default function Home() {
   );
 
   const stats = useMemo(
-    () => ({
-      sessionCount: sessions?.length || 0,
-      friendCount: friendships?.filter((f) => f.status === "accepted")?.length || 0,
-      requestCount: nearbySessions?.length || 0,
-    }),
-    [sessions, friendships, nearbySessions]
-  );
+  () => ({
+    sessions: visibleSessions.length,
+    friends: friendProfiles.length,
+    nearby: nearbySessions.length,
+  }),
+  [visibleSessions, friendProfiles, nearbySessions]
+);
 
   useEffect(() => {
     const coordinateLocations = Array.from(
@@ -710,9 +710,9 @@ export default function Home() {
         </div>
 
         <div className="mt-4 grid grid-cols-3 gap-2">
-          <StatPill icon={<MessageCircle size={14} />} label="Sessions" value={stats.sessionCount} />
-          <StatPill icon={<HeartHandshake size={14} />} label="Freunde" value={stats.friendCount} />
-          <StatPill icon={<MapIcon size={14} />} label="Nearby" value={nearbySessions.length} />
+	<StatPill icon={<MessageCircle size={14} />} label="Sessions" value={stats.sessions} />
+	<StatPill icon={<HeartHandshake size={14} />} label="Freunde" value={stats.friends} />
+	<StatPill icon={<MapIcon size={14} />} label="Nearby" value={stats.nearby} />
         </div>
       </AppCard>
 
