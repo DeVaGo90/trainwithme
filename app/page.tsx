@@ -122,7 +122,7 @@ function PrimaryButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       {...props}
-      className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white ${props.className || ""}`}
+      className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60 ${props.className || ""}`}
     />
   );
 }
@@ -131,7 +131,7 @@ function GreenButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       {...props}
-      className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white ${props.className || ""}`}
+      className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60 ${props.className || ""}`}
     />
   );
 }
@@ -140,7 +140,7 @@ function RedButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       {...props}
-      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white ${props.className || ""}`}
+      className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60 ${props.className || ""}`}
     />
   );
 }
@@ -149,7 +149,7 @@ function GhostButton(props: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       {...props}
-      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 ${props.className || ""}`}
+      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-60 ${props.className || ""}`}
     />
   );
 }
@@ -167,7 +167,7 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...props}
-      className={`w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base outline-none ${props.className || ""}`}
+      className={`w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base outline-none disabled:bg-slate-100 disabled:text-slate-500 ${props.className || ""}`}
     />
   );
 }
@@ -238,6 +238,7 @@ export default function Home() {
   const [sport, setSport] = useState("Laufen");
   const [userSearch, setUserSearch] = useState("");
   const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -513,7 +514,8 @@ export default function Home() {
       .eq("addressee_id", user.id);
 
     if (error) {
-      setMessage("Anfrage konnte nicht abgelehnt werden: " + error.message);
+      setMessage("Anfrage abgelehnt.");
+      await loadFriendships();
       return;
     }
 
@@ -542,20 +544,26 @@ export default function Home() {
       return;
     }
 
+    setIsSubmitting(true);
     setMessage("Standort wird ermittelt...");
 
     const currentLocation = await getCurrentLocation();
 
-    const { error } = await supabase.from("sessions").insert({
-      user_id: user.id,
-      user_name: profile.display_name,
-      sport,
-      location: currentLocation,
-      status: "live",
-    });
+    const { data, error } = await supabase
+      .from("sessions")
+      .insert({
+        user_id: user.id,
+        user_name: profile.display_name,
+        sport,
+        location: currentLocation,
+        status: "live",
+      })
+      .select()
+      .single();
 
     if (error) {
       setMessage("Session konnte nicht gestartet werden: " + error.message);
+      setIsSubmitting(false);
       return;
     }
 
@@ -565,28 +573,49 @@ export default function Home() {
       setMessage("Training gestartet.");
     }
 
-    await loadAllSessions();
+    setSessions((prev) => [data as SessionItem, ...prev.filter((s) => s.id !== data.id)]);
+    setIsSubmitting(false);
   }
 
   async function endSession(sessionId: string) {
     if (!user) return;
 
-    const { error } = await supabase
+    setIsSubmitting(true);
+
+    const endedAt = new Date().toISOString();
+
+    const { data, error } = await supabase
       .from("sessions")
       .update({
         status: "ended",
-        ended_at: new Date().toISOString(),
+        ended_at: endedAt,
       })
       .eq("id", sessionId)
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .select();
 
     if (error) {
       setMessage("Session konnte nicht beendet werden: " + error.message);
+      setIsSubmitting(false);
       return;
     }
 
+    if (!data || data.length === 0) {
+      setMessage("Session wurde nicht gefunden oder durfte nicht geändert werden.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? { ...s, status: "ended", ended_at: endedAt }
+          : s
+      )
+    );
+
     setMessage("Training beendet.");
-    await loadAllSessions();
+    setIsSubmitting(false);
   }
 
   if (!user) {
@@ -821,57 +850,55 @@ export default function Home() {
           <AppCard>
             <div className="mb-4 flex items-center gap-3">
               <div className="rounded-2xl bg-slate-100 p-3">
-                <Play size={18} />
+                {myLiveSession ? <Square size={18} /> : <Play size={18} />}
               </div>
               <div>
-                <h2 className="text-lg font-semibold">Training starten</h2>
+                <h2 className="text-lg font-semibold">
+                  {myLiveSession ? "Training läuft" : "Training starten"}
+                </h2>
                 <p className="text-sm text-slate-500">
-                  Einfach live gehen und Sportart wählen
+                  {myLiveSession
+                    ? "Beende deine aktuelle Session"
+                    : "Einfach live gehen und Sportart wählen"}
                 </p>
               </div>
             </div>
 
-            {myLiveSession ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                <div className="text-sm font-semibold text-emerald-700">
-                  Du bist gerade live
+            <div className="grid gap-3">
+              <Select
+                value={myLiveSession?.sport || sport}
+                onChange={(e) => setSport(e.target.value)}
+                disabled={!!myLiveSession || isSubmitting}
+              >
+                {sports.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </Select>
+
+              {myLiveSession?.location && (
+                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+                  <span className="font-semibold text-slate-900">Ort:</span>{" "}
+                  {myLiveSession.location}
                 </div>
-                <div className="mt-2 flex items-center gap-2 text-base font-semibold text-slate-900">
-                  <span className="rounded-full bg-white p-2">
-                    {sportIcon(myLiveSession.sport || "")}
-                  </span>
-                  <span>{myLiveSession.sport || "-"}</span>
-                </div>
-                {myLiveSession.location && (
-                  <div className="mt-2 text-sm text-slate-600">
-                    Ort: {myLiveSession.location}
-                  </div>
-                )}
-                <div className="mt-2 text-sm text-slate-500">
-                  Gestartet: {formatDateTime(myLiveSession.created_at)}
-                </div>
+              )}
+
+              {myLiveSession ? (
                 <RedButton
                   onClick={() => endSession(myLiveSession.id)}
-                  className="mt-4 w-full"
+                  disabled={isSubmitting}
                 >
-                  <Square size={16} /> Training beenden
+                  <Square size={16} />
+                  {isSubmitting ? "Wird beendet..." : "Training beenden"}
                 </RedButton>
-              </div>
-            ) : (
-              <div className="grid gap-3">
-                <Select value={sport} onChange={(e) => setSport(e.target.value)}>
-                  {sports.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </Select>
-
-                <GreenButton onClick={startSession}>
-                  <Play size={16} /> Ich trainiere jetzt
+              ) : (
+                <GreenButton onClick={startSession} disabled={isSubmitting}>
+                  <Play size={16} />
+                  {isSubmitting ? "Wird gestartet..." : "Ich trainiere jetzt"}
                 </GreenButton>
-              </div>
-            )}
+              )}
+            </div>
           </AppCard>
 
           <AppCard>
@@ -923,15 +950,6 @@ export default function Home() {
                           Live
                         </span>
                       </div>
-
-                      {isOwn && (
-                        <RedButton
-                          onClick={() => endSession(s.id)}
-                          className="mt-4 w-full"
-                        >
-                          <Square size={16} /> Beenden
-                        </RedButton>
-                      )}
                     </div>
                   );
                 })
