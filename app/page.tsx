@@ -199,7 +199,7 @@ function formatDuration(start: string | null | undefined, end: string | null | u
   return `${hours}h ${minutes} Min`;
 }
 
-function getCurrentLocation(): Promise<string | null> {
+async function getCurrentLocation(): Promise<string | null> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       resolve(null);
@@ -207,10 +207,45 @@ function getCurrentLocation(): Promise<string | null> {
     }
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude.toFixed(5);
-        const lng = pos.coords.longitude.toFixed(5);
-        resolve(`${lat}, ${lng}`);
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+            {
+              headers: {
+                Accept: "application/json",
+              },
+            }
+          );
+
+          if (!res.ok) {
+            resolve(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+            return;
+          }
+
+          const data = await res.json();
+          const address = data.address || {};
+
+          const parts = [
+            address.road,
+            address.house_number,
+            address.suburb,
+            address.neighbourhood,
+            address.city || address.town || address.village,
+          ].filter(Boolean);
+
+          const label =
+            parts.length > 0
+              ? parts.join(", ")
+              : data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+          resolve(label);
+        } catch {
+          resolve(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        }
       },
       () => resolve(null),
       {
@@ -221,7 +256,6 @@ function getCurrentLocation(): Promise<string | null> {
     );
   });
 }
-
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabKey>("live");
   const [user, setUser] = useState<AppUser | null>(null);
