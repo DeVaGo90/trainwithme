@@ -19,6 +19,9 @@ import {
   Play,
   Square,
   Activity,
+  MessageCircle,
+  Send,
+  ChevronLeft,
 } from "lucide-react";
 
 const supabase = createClient(
@@ -37,6 +40,14 @@ const sports = [
   "Schwimmen",
   "Trailrunning",
   "Hyrox",
+];
+
+const quickMessages = [
+  "Zieh durch 💪",
+  "Bleib da ich bin auf dem Weg!",
+  "Wie lange noch?",
+  "Stark!",
+  "Ich komme gleich",
 ];
 
 type TabKey = "live" | "friends" | "profile";
@@ -70,6 +81,15 @@ type SessionItem = {
   status: SessionStatus | null;
   created_at: string | null;
   ended_at?: string | null;
+};
+
+type SessionMessage = {
+  id: string;
+  session_id: string;
+  user_id: string;
+  user_name: string | null;
+  message: string;
+  created_at: string | null;
 };
 
 function sportIcon(label: string) {
@@ -256,6 +276,7 @@ async function getCurrentLocation(): Promise<string | null> {
     );
   });
 }
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabKey>("live");
   const [user, setUser] = useState<AppUser | null>(null);
@@ -264,6 +285,7 @@ export default function Home() {
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
   const [friendships, setFriendships] = useState<Friendship[]>([]);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
+  const [sessionMessages, setSessionMessages] = useState<SessionMessage[]>([]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -273,6 +295,8 @@ export default function Home() {
   const [userSearch, setUserSearch] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeChatSession, setActiveChatSession] = useState<SessionItem | null>(null);
+  const [chatInput, setChatInput] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -301,6 +325,8 @@ export default function Home() {
         setAllProfiles([]);
         setFriendships([]);
         setSessions([]);
+        setSessionMessages([]);
+        setActiveChatSession(null);
       }
     });
 
@@ -315,6 +341,14 @@ export default function Home() {
     if (!user) return;
     void initializeUserData();
   }, [user]);
+
+  useEffect(() => {
+    if (!activeChatSession) {
+      setSessionMessages([]);
+      return;
+    }
+    void loadSessionMessages(activeChatSession.id);
+  }, [activeChatSession]);
 
   const incomingRequests = useMemo(() => {
     if (!user) return [] as Friendship[];
@@ -373,6 +407,12 @@ export default function Home() {
       .filter((s) => s.user_id === user.id && s.status === "ended")
       .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
   }, [sessions, user]);
+
+  const orderedMessages = useMemo(() => {
+    return [...sessionMessages].sort((a, b) =>
+      (a.created_at || "").localeCompare(b.created_at || "")
+    );
+  }, [sessionMessages]);
 
   async function initializeUserData() {
     await ensureProfile();
@@ -454,6 +494,16 @@ export default function Home() {
       .order("created_at", { ascending: false });
 
     setSessions(data || []);
+  }
+
+  async function loadSessionMessages(sessionId: string) {
+    const { data } = await supabase
+      .from("session_messages")
+      .select("id, session_id, user_id, user_name, message, created_at")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true });
+
+    setSessionMessages(data || []);
   }
 
   async function signUp() {
@@ -648,8 +698,42 @@ export default function Home() {
       )
     );
 
+    if (activeChatSession?.id === sessionId) {
+      setActiveChatSession(null);
+      setSessionMessages([]);
+      setChatInput("");
+    }
+
     setMessage("Training beendet.");
     setIsSubmitting(false);
+  }
+
+  async function sendChatMessage(text?: string) {
+    if (!user || !activeChatSession) return;
+
+    const content = (text ?? chatInput).trim();
+    if (!content) return;
+
+    const senderName = profile?.display_name || user.email;
+
+    const { data, error } = await supabase
+      .from("session_messages")
+      .insert({
+        session_id: activeChatSession.id,
+        user_id: user.id,
+        user_name: senderName,
+        message: content,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      setMessage("Nachricht konnte nicht gesendet werden: " + error.message);
+      return;
+    }
+
+    setSessionMessages((prev) => [...prev, data as SessionMessage]);
+    setChatInput("");
   }
 
   if (!user) {
@@ -879,7 +963,86 @@ export default function Home() {
         </div>
       )}
 
-      {activeTab === "live" && (
+      {activeTab === "live" && activeChatSession && (
+        <AppCard>
+          <div className="mb-4 flex items-center gap-3">
+            <button
+              onClick={() => {
+                setActiveChatSession(null);
+                setSessionMessages([]);
+                setChatInput("");
+              }}
+              className="rounded-2xl border border-slate-200 p-3"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <div>
+              <h2 className="text-lg font-semibold">Session-Chat</h2>
+              <p className="text-sm text-slate-500">
+                {activeChatSession.user_name || "Unbekannt"} · {activeChatSession.sport || "-"}
+              </p>
+            </div>
+          </div>
+
+          <div className="mb-4 grid gap-3">
+            <div className="flex flex-wrap gap-2">
+              {quickMessages.map((quick) => (
+                <button
+                  key={quick}
+                  onClick={() => void sendChatMessage(quick)}
+                  className="rounded-full bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700"
+                >
+                  {quick}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mb-4 grid max-h-[45vh] gap-3 overflow-y-auto">
+            {orderedMessages.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                Noch keine Nachrichten.
+              </div>
+            ) : (
+              orderedMessages.map((m) => {
+                const isMine = m.user_id === user.id;
+                return (
+                  <div
+                    key={m.id}
+                    className={`rounded-2xl border p-3 ${
+                      isMine
+                        ? "border-emerald-200 bg-emerald-50"
+                        : "border-slate-200 bg-slate-50"
+                    }`}
+                  >
+                    <div className="mb-1 text-sm font-semibold">
+                      {isMine ? "Du" : m.user_name || "Unbekannt"}
+                    </div>
+                    <div className="text-sm leading-6">{m.message}</div>
+                    <div className="mt-2 text-xs text-slate-500">
+                      {formatDateTime(m.created_at)}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="grid gap-3">
+            <Input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="Nachricht schreiben"
+            />
+            <GreenButton onClick={() => void sendChatMessage()}>
+              <Send size={16} />
+              Senden
+            </GreenButton>
+          </div>
+        </AppCard>
+      )}
+
+      {activeTab === "live" && !activeChatSession && (
         <div className="grid gap-4">
           <AppCard>
             <div className="mb-4 flex items-center gap-3">
@@ -984,6 +1147,14 @@ export default function Home() {
                           Live
                         </span>
                       </div>
+
+                      <GhostButton
+                        className="mt-4 w-full"
+                        onClick={() => setActiveChatSession(s)}
+                      >
+                        <MessageCircle size={16} />
+                        Chat öffnen
+                      </GhostButton>
                     </div>
                   );
                 })
@@ -1045,7 +1216,10 @@ export default function Home() {
       <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 px-3 py-3 backdrop-blur">
         <div className="mx-auto grid max-w-md grid-cols-3 gap-2">
           <button
-            onClick={() => setActiveTab("live")}
+            onClick={() => {
+              setActiveTab("live");
+              setActiveChatSession(null);
+            }}
             className={`rounded-2xl px-3 py-3 text-sm font-semibold ${
               activeTab === "live" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-700"
             }`}
